@@ -10,6 +10,7 @@ import * as dotenv from 'dotenv';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 import { EnhancedGHLClient } from './enhanced-ghl-client.js';
@@ -49,14 +50,34 @@ function readConfig(): GHLConfig {
   return config;
 }
 
-function createMcpServer(client: EnhancedGHLClient): McpServer {
-  const server = new McpServer(
+function createMcpServer(client: EnhancedGHLClient): Server {
+  const server = new Server(
     { name: 'ghl-mcp-server', version: '3.0.0' },
     { capabilities: { tools: {} } }
   );
-  new ToolRegistry(client).registerAll(server);
+  const registry = new ToolRegistry(client);
+  const allTools = registry.getAllToolDefinitions();
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: allTools }));
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    try {
+      const result = await registry.callTool(name, (args || {}) as Record<string, unknown>);
+      if (result === undefined) throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+      const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+      return { content: [{ type: 'text' as const, text }] };
+    } catch (err: any) {
+      if (err instanceof McpError) throw err;
+      return {
+        content: [{ type: 'text' as const, text: `Error executing ${name}: ${err.message}` }],
+        isError: true,
+      };
+    }
+  });
   return server;
 }
+
+
 
 async function main() {
   const port = parseInt(process.env.PORT || process.env.MCP_SERVER_PORT || '8000', 10);
