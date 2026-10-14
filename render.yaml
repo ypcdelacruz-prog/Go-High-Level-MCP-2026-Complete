@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ghl-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GHL_TOOL_PROFILE
+        value: curated
+      # Secrets: Render asks for these in the dashboard; they are never stored in git.
+      - key: GHL_API_KEY
+        sync: false
+      - key: GHL_LOCATION_ID
+        sync: false
+      - key: MCP_ACCESS_KEY
+        sync: false

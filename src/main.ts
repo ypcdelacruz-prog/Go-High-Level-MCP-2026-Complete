@@ -19,6 +19,7 @@ import { GHLConfig } from './types/ghl-types.js';
 import { registerExecuteRoutes } from './execute-route.js';
 import { resolveVersion } from './clients/version-router.js';
 import { createPerRequestConfig } from './request-config.js';
+import { accessKeyMiddleware, resolveAccessKey } from './access-key.js';
 
 dotenv.config();
 
@@ -81,6 +82,7 @@ function createMcpServer(client: EnhancedGHLClient): Server {
 
 async function main() {
   const port = parseInt(process.env.PORT || process.env.MCP_SERVER_PORT || '8000', 10);
+  const accessKey = resolveAccessKey();
   const config = readConfig();
   const ghlClient = new EnhancedGHLClient(config);
   const registry = new ToolRegistry(ghlClient);
@@ -111,6 +113,14 @@ async function main() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'mcp-session-id', 'x-ghl-access-token', 'x-ghl-location-id', 'x-ghl-user-type'],
     credentials: true,
   }));
+  // Access key goes before the body parser and the request logger so that a
+  // key placed in the URL is checked, stripped, and never logged.
+  if (accessKey) {
+    app.use(accessKeyMiddleware(accessKey));
+    log('info', 'Access key protection enabled');
+  } else {
+    log('warn', 'MCP_ACCESS_KEY is not set: HTTP endpoints are open. Do not expose this server to the internet.');
+  }
   app.use(express.json());
   app.use((req, _res, next) => {
     log('debug', `${req.method} ${req.path}`, { ip: req.ip });
